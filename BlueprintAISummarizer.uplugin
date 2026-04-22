@@ -1,0 +1,19 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "1.0",
+	"FriendlyName": "Blueprint AI Summarizer",
+	"Description": "Adds a Content Browser action that copies compact AI-readable summaries of selected Blueprint assets.",
+	"Category": "Editor",
+	"CreatedBy": "Codex",
+	"CanContainContent": false,
+	"IsBetaVersion": false,
+	"Installed": false,
+	"Modules": [
+		{
+			"Name": "BlueprintAISummarizer",
+			"Type": "Editor",
+			"LoadingPhase": "Default"
+		}
+	]
+}
