@@ -5,6 +5,7 @@
 #include "EdGraph/EdGraphPin.h"
 #include "Editor.h"
 #include "Framework/MultiBox/MultiBoxBuilder.h"
+#include "GraphEditor.h"
 #include "GraphEditorModule.h"
 #include "HAL/PlatformApplicationMisc.h"
 #include "Kismet2/BlueprintEditorUtils.h"
@@ -95,6 +96,16 @@ namespace BlueprintAISummarizer
 		}
 
 		return FString::Printf(TEXT("%s [%s]"), *NodeTitle(Node), *Node->GetName());
+	}
+
+	static FString PinRef(const UEdGraphPin* Pin)
+	{
+		if (!Pin || !Pin->GetOwningNode())
+		{
+			return TEXT("<null>");
+		}
+
+		return FString::Printf(TEXT("%s.%s"), *NodeRef(Pin->GetOwningNode()), *Pin->PinName.ToString());
 	}
 
 	static void AppendNode(const UEdGraphNode* Node, const TSet<const UEdGraphNode*>& SelectedNodeSet, FStringBuilderBase& Out)
@@ -193,8 +204,20 @@ namespace BlueprintAISummarizer
 	{
 		TArray<UEdGraphNode*> Nodes;
 
+		if (TSharedPtr<SGraphEditor> GraphEditor = SGraphEditor::FindGraphEditorForGraph(Graph))
+		{
+			for (UObject* SelectedObject : GraphEditor->GetSelectedNodes())
+			{
+				UEdGraphNode* SelectedNode = Cast<UEdGraphNode>(SelectedObject);
+				if (SelectedNode && SelectedNode->GetGraph() == Graph)
+				{
+					Nodes.AddUnique(SelectedNode);
+				}
+			}
+		}
+
 		UBlueprint* Blueprint = FBlueprintEditorUtils::FindBlueprintForGraph(Graph);
-		if (Blueprint && GEditor)
+		if (Nodes.IsEmpty() && Blueprint && GEditor)
 		{
 			if (UAssetEditorSubsystem* AssetEditorSubsystem = GEditor->GetEditorSubsystem<UAssetEditorSubsystem>())
 			{
@@ -240,11 +263,11 @@ namespace BlueprintAISummarizer
 			: LOCTEXT("CopyNodeSummary", "Copy AI Summary");
 	}
 
-	static FString SummarizeSelectedNodes(const UEdGraph* Graph, const TArray<UEdGraphNode*>& Nodes)
+	static FString SummarizeSelectedNodesVerbose(const UEdGraph* Graph, const TArray<UEdGraphNode*>& Nodes)
 	{
 		TStringBuilder<65536> Out;
-		Out.Append(TEXT("Blueprint Node AI Summary\n"));
-		Out.Append(TEXT("=========================\n"));
+		Out.Append(TEXT("Blueprint Node AI Summary (Verbose)\n"));
+		Out.Append(TEXT("===================================\n"));
 
 		if (const UBlueprint* Blueprint = FBlueprintEditorUtils::FindBlueprintForGraph(Graph))
 		{
@@ -275,6 +298,189 @@ namespace BlueprintAISummarizer
 
 			++NodeCount;
 			AppendNode(Node, SelectedNodeSet, Out);
+		}
+
+		return FString(Out.ToString());
+	}
+
+	static FString SummarizeSelectedNodesCompact(const UEdGraph* Graph, const TArray<UEdGraphNode*>& Nodes)
+	{
+		TStringBuilder<65536> Out;
+		Out.Append(TEXT("Blueprint Node AI Summary\n"));
+		Out.Append(TEXT("=========================\n"));
+
+		if (const UBlueprint* Blueprint = FBlueprintEditorUtils::FindBlueprintForGraph(Graph))
+		{
+			Out.Appendf(TEXT("Blueprint: %s\n"), *Blueprint->GetPathName());
+		}
+
+		if (Graph)
+		{
+			Out.Appendf(TEXT("Graph: %s\n"), *Graph->GetName());
+		}
+
+		Out.Appendf(TEXT("SelectedNodes: %d\n\n"), Nodes.Num());
+
+		TSet<const UEdGraphNode*> SelectedNodeSet;
+		for (const UEdGraphNode* Node : Nodes)
+		{
+			SelectedNodeSet.Add(Node);
+		}
+
+		Out.Append(TEXT("Nodes:\n"));
+		for (const UEdGraphNode* Node : Nodes)
+		{
+			if (!Node)
+			{
+				continue;
+			}
+
+			Out.Appendf(TEXT("- %s [%s] class=%s"), *NodeTitle(Node), *Node->GetName(), *Node->GetClass()->GetName());
+
+			const FString Comment = Shorten(Node->NodeComment, 160);
+			if (!Comment.IsEmpty())
+			{
+				Out.Appendf(TEXT(" // %s"), *Comment);
+			}
+
+			Out.Append(TEXT("\n"));
+		}
+
+		Out.Append(TEXT("\nFlow:\n"));
+		int32 FlowCount = 0;
+		for (const UEdGraphNode* Node : Nodes)
+		{
+			if (!Node)
+			{
+				continue;
+			}
+
+			for (const UEdGraphPin* Pin : Node->Pins)
+			{
+				if (!Pin || Pin->Direction != EGPD_Output || Pin->LinkedTo.IsEmpty())
+				{
+					continue;
+				}
+
+				for (const UEdGraphPin* LinkedPin : Pin->LinkedTo)
+				{
+					if (!LinkedPin || !LinkedPin->GetOwningNode())
+					{
+						continue;
+					}
+
+					if (SelectedNodeSet.Contains(LinkedPin->GetOwningNode()))
+					{
+						Out.Appendf(TEXT("- %s -> %s\n"), *PinRef(Pin), *PinRef(LinkedPin));
+						++FlowCount;
+					}
+				}
+			}
+		}
+
+		if (FlowCount == 0)
+		{
+			Out.Append(TEXT("- <none inside selection>\n"));
+		}
+
+		Out.Append(TEXT("\nExternal Inputs:\n"));
+		int32 ExternalInputCount = 0;
+		for (const UEdGraphNode* Node : Nodes)
+		{
+			if (!Node)
+			{
+				continue;
+			}
+
+			for (const UEdGraphPin* Pin : Node->Pins)
+			{
+				if (!Pin || Pin->Direction != EGPD_Input || Pin->LinkedTo.IsEmpty())
+				{
+					continue;
+				}
+
+				for (const UEdGraphPin* LinkedPin : Pin->LinkedTo)
+				{
+					if (!LinkedPin || !LinkedPin->GetOwningNode() || SelectedNodeSet.Contains(LinkedPin->GetOwningNode()))
+					{
+						continue;
+					}
+
+					Out.Appendf(TEXT("- %s -> %s\n"), *PinRef(LinkedPin), *PinRef(Pin));
+					++ExternalInputCount;
+				}
+			}
+		}
+
+		if (ExternalInputCount == 0)
+		{
+			Out.Append(TEXT("- <none>\n"));
+		}
+
+		Out.Append(TEXT("\nExternal Outputs:\n"));
+		int32 ExternalOutputCount = 0;
+		for (const UEdGraphNode* Node : Nodes)
+		{
+			if (!Node)
+			{
+				continue;
+			}
+
+			for (const UEdGraphPin* Pin : Node->Pins)
+			{
+				if (!Pin || Pin->Direction != EGPD_Output || Pin->LinkedTo.IsEmpty())
+				{
+					continue;
+				}
+
+				for (const UEdGraphPin* LinkedPin : Pin->LinkedTo)
+				{
+					if (!LinkedPin || !LinkedPin->GetOwningNode() || SelectedNodeSet.Contains(LinkedPin->GetOwningNode()))
+					{
+						continue;
+					}
+
+					Out.Appendf(TEXT("- %s -> %s\n"), *PinRef(Pin), *PinRef(LinkedPin));
+					++ExternalOutputCount;
+				}
+			}
+		}
+
+		if (ExternalOutputCount == 0)
+		{
+			Out.Append(TEXT("- <none>\n"));
+		}
+
+		Out.Append(TEXT("\nSet Parameters:\n"));
+		int32 ParameterCount = 0;
+		for (const UEdGraphNode* Node : Nodes)
+		{
+			if (!Node)
+			{
+				continue;
+			}
+
+			for (const UEdGraphPin* Pin : Node->Pins)
+			{
+				if (!Pin || Pin->Direction != EGPD_Input || !Pin->LinkedTo.IsEmpty())
+				{
+					continue;
+				}
+
+				const FString DefaultValue = Shorten(Pin->DefaultValue, MaxDefaultValueLen);
+				if (DefaultValue.IsEmpty())
+				{
+					continue;
+				}
+
+				Out.Appendf(TEXT("- %s = %s\n"), *PinRef(Pin), *DefaultValue);
+				++ParameterCount;
+			}
+		}
+
+		if (ParameterCount == 0)
+		{
+			Out.Append(TEXT("- <none with explicit values>\n"));
 		}
 
 		return FString(Out.ToString());
@@ -334,12 +540,24 @@ private:
 			LOCTEXT("CopyNodeSummaryTooltip", "Copy a compact AI-readable text summary of the selected Blueprint nodes to the clipboard."),
 			FSlateIcon(),
 			FUIAction(FExecuteAction::CreateRaw(this, &FBlueprintAISummarizerModule::CopyNodeSummaries, Graph, Node)));
+
+		MenuBuilder.AddMenuEntry(
+			LOCTEXT("CopyNodeSummaryVerbose", "Copy AI Summary (Verbose)"),
+			LOCTEXT("CopyNodeSummaryVerboseTooltip", "Copy a detailed AI-readable text summary of selected Blueprint nodes, including unlinked pins."),
+			FSlateIcon(),
+			FUIAction(FExecuteAction::CreateRaw(this, &FBlueprintAISummarizerModule::CopyNodeSummariesVerbose, Graph, Node)));
 	}
 
 	void CopyNodeSummaries(const UEdGraph* Graph, const UEdGraphNode* Node)
 	{
 		const TArray<UEdGraphNode*> SelectedNodes = BlueprintAISummarizer::GetSelectedNodesForGraph(Graph, Node);
-		FPlatformApplicationMisc::ClipboardCopy(*BlueprintAISummarizer::SummarizeSelectedNodes(Graph, SelectedNodes));
+		FPlatformApplicationMisc::ClipboardCopy(*BlueprintAISummarizer::SummarizeSelectedNodesCompact(Graph, SelectedNodes));
+	}
+
+	void CopyNodeSummariesVerbose(const UEdGraph* Graph, const UEdGraphNode* Node)
+	{
+		const TArray<UEdGraphNode*> SelectedNodes = BlueprintAISummarizer::GetSelectedNodesForGraph(Graph, Node);
+		FPlatformApplicationMisc::ClipboardCopy(*BlueprintAISummarizer::SummarizeSelectedNodesVerbose(Graph, SelectedNodes));
 	}
 };
 

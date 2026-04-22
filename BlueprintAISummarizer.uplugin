@@ -3,7 +3,7 @@
 	"Version": 1,
 	"VersionName": "1.0",
 	"FriendlyName": "Blueprint AI Summarizer",
-	"Description": "Adds a Content Browser action that copies compact AI-readable summaries of selected Blueprint assets.",
+	"Description": "Adds graph editor actions that copy compact or verbose AI-readable summaries of selected graph nodes.",
 	"Category": "Editor",
 	"CreatedBy": "Codex",
 	"CanContainContent": false,
