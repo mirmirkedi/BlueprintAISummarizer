@@ -66,10 +66,10 @@ Blueprint: /Game/BP_MyActor.BP_MyActor
 Graph: EventGraph
 SelectedNodes: 2
 
-- [K2Node_Event] Event BeginPlay pos=(-384,96)
-  - out then: exec -> selected: Print String.execute
-- [K2Node_CallFunction] Print String pos=(-80,96)
-  - in execute: exec -> selected: Event BeginPlay.then
+- [K2Node_Event] Event BeginPlay id=K2Node_Event_0
+  - out then: exec -> selected: Print String [K2Node_CallFunction_1].execute
+- [K2Node_CallFunction] Print String id=K2Node_CallFunction_1
+  - in execute: exec -> selected: Event BeginPlay [K2Node_Event_0].then
   - in In String: string = Hello
 ```
 

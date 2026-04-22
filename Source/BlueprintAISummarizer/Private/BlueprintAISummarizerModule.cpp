@@ -87,6 +87,16 @@ namespace BlueprintAISummarizer
 		return Shorten(Title, 96);
 	}
 
+	static FString NodeRef(const UEdGraphNode* Node)
+	{
+		if (!Node)
+		{
+			return TEXT("<null>");
+		}
+
+		return FString::Printf(TEXT("%s [%s]"), *NodeTitle(Node), *Node->GetName());
+	}
+
 	static void AppendNode(const UEdGraphNode* Node, const TSet<const UEdGraphNode*>& SelectedNodeSet, FStringBuilderBase& Out)
 	{
 		if (!Node)
@@ -94,8 +104,7 @@ namespace BlueprintAISummarizer
 			return;
 		}
 
-		Out.Appendf(TEXT("- [%s] %s"), *Node->GetClass()->GetName(), *NodeTitle(Node));
-		Out.Appendf(TEXT(" pos=(%d,%d)"), Node->NodePosX, Node->NodePosY);
+		Out.Appendf(TEXT("- [%s] %s id=%s"), *Node->GetClass()->GetName(), *NodeTitle(Node), *Node->GetName());
 
 		const FString Comment = Shorten(Node->NodeComment, 160);
 		if (!Comment.IsEmpty())
@@ -168,7 +177,7 @@ namespace BlueprintAISummarizer
 						}
 
 						const UEdGraphPin* LinkedPin = Links[LinkIndex];
-						Out.Appendf(TEXT("%s.%s"), *NodeTitle(LinkedPin->GetOwningNode()), *LinkedPin->PinName.ToString());
+						Out.Appendf(TEXT("%s.%s"), *NodeRef(LinkedPin->GetOwningNode()), *LinkedPin->PinName.ToString());
 					}
 				};
 
