@@ -1,5 +1,7 @@
 # Blueprint AI Summarizer
 
+![Blueprint AI Summarizer](Images/image.png)
+
 Blueprint AI Summarizer is an editor-only Unreal Engine plugin that copies AI-readable summaries of selected graph nodes.
 
 It is made for the common workflow where copying raw node text into an AI chat is too large, noisy, or awkward. Select only the nodes you want to discuss, right-click one of them, and choose **Copy AI Summary**.
